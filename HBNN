@@ -1,1 +1,196 @@
+# -*- coding: gbk -*-
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.distributions import Normal
+import random
+import numpy as np
+
+
+# 贝叶斯神经网络的构造
+class BayesianLinear(nn.Module):
+    def __init__(self, in_features, out_features):
+        super(BayesianLinear, self).__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+
+        self.weight_mu = nn.Parameter(torch.Tensor(out_features, in_features).uniform_(-0.2, 0.2))
+        self.weight_rho = nn.Parameter(torch.Tensor(out_features, in_features).uniform_(-5, -4))
+        self.bias_mu = nn.Parameter(torch.Tensor(out_features).uniform_(-0.2, 0.2))
+        self.bias_rho = nn.Parameter(torch.Tensor(out_features).uniform_(-5, -4))
+
+        self.weight = None
+        self.bias = None
+
+    def sample_weight(self):
+        sigma_weight = torch.log1p(torch.exp(self.weight_rho))
+        epsilon_weight = Normal(0, 1).sample(self.weight_mu.shape)
+        weight = self.weight_mu + sigma_weight * epsilon_weight
+
+        sigma_bias = torch.log1p(torch.exp(self.bias_rho))
+        epsilon_bias = Normal(0, 1).sample(self.bias_mu.shape)
+        bias = self.bias_mu + sigma_bias * epsilon_bias
+
+        return weight, bias
+
+    def forward(self, x):
+        self.weight, self.bias = self.sample_weight()
+        return nn.functional.linear(x, self.weight, self.bias)
+
+
+# 构建混合的贝叶斯神经网络（FNN+GRU）
+class SimpleGRUWithBayesianOutput(nn.Module):
+    def __init__(self, input_size, hidden_size, output_size, num_layers, static_input_size):
+        super(SimpleGRUWithBayesianOutput, self).__init__()
+        self.gru = nn.GRU(input_size, hidden_size, num_layers=num_layers)
+        self.fc_static = nn.Linear(static_input_size, hidden_size)
+        self.fc_final = BayesianLinear(hidden_size * 2, output_size)
+
+    def forward(self, x, static_input):
+        output, _ = self.gru(x)
+        output = output[-1, :, :]
+        static_input = self.fc_static(static_input)
+        combined = torch.cat((output, static_input), dim=1)
+        output = self.fc_final(combined)
+        return output
+
+
+# 定义损失函数: 均方误差MSE + 贝叶斯神经网络的损失函数ELBO
+def elbo_loss(y_pred, y_true, model):
+    likelihood = Normal(y_pred, 1)
+    nll = -likelihood.log_prob(y_true).sum()
+
+    kl_divergence = 0
+    for module in model.modules():
+        if isinstance(module, BayesianLinear):
+            kl_divergence += torch.sum(torch.log(module.weight_rho.exp()) - module.weight_rho + 0.5 * module.weight_mu.pow(2) + 0.5 * module.weight_rho.exp().pow(2) - 0.5)
+            kl_divergence += torch.sum(torch.log(module.bias_rho.exp()) - module.bias_rho + 0.5 * module.bias_mu.pow(2) + 0.5 * module.bias_rho.exp().pow(2) - 0.5)
+
+    mse = torch.mean((y_pred - y_true) ** 2)
+    # print(mse)
+
+    return nll + kl_divergence + mse
+
+
+# 进行标准化
+def max_min(x, max, min):
+    return (x-min)/(max-min)
+
+# 对列表内的数据进行标准化
+def max_min_list(x, max, min):
+    ll = []
+    for i in x:
+        ll.append((i-min)/(max-min))
+    return ll
+
+# 模型生产的数据 x1*100 + s1 - s2
+def generater_data(num):
+    input_list = []
+    output_list = []
+    static_list = []
+    for i in range(num):
+        min_val = 1  # 最小值
+        max_val = 100  # 最大值
+        len = random.randint(1,4)
+        mid_list = [random.randint(min_val, max_val) for _ in range(len)]
+        si_1 = random.randint(1, 100)
+        si_2 = random.randint(1, 100)
+        out =  mid_list[0] * 100 + si_1 - si_2
+        print(mid_list)
+        print(si_1)
+        print(si_2)
+        print(out)
+        mid_list = max_min_list(mid_list, 100, 1)
+        si_1 = max_min(si_1, 100, 1)
+        si_2 = max_min(si_2, 100, 1)
+        out = max_min(out, 10099, 1)
+        input_list.append(mid_list)
+        static_list.append([si_1, si_2])
+        output_list.append(out)
+
+    inputs = [torch.tensor([[x] for x in sublist]).float() for sublist in input_list]
+    targets = [torch.tensor([value]).float() for value in output_list]
+    static_inputs = [torch.tensor(values).float() for values in static_list]
+    return (inputs, targets, static_inputs)
+
+
+# 进行必要的参数设置
+input_size = 1
+hidden_size = 5
+output_size = 1
+num_layers = 2
+static_input_size = 2
+
+# 建立好学习的模型
+model = SimpleGRUWithBayesianOutput(input_size, hidden_size, output_size, num_layers, static_input_size)
+criterion = elbo_loss
+optimizer = optim.Adam(model.parameters(), lr=0.002)
+
+# 生成数据
+# get_data = generater_data(10)
+
+# 对数据进行格式转换
+# inputs = get_data[0]
+# targets = get_data[1]
+# static_inputs = get_data[2]
+
+
+num_samples = 10  # 从近似后验中采样的次数
+epochs = 100
+
+
+# 进行GRU的参数更新
+def inner_update(data, model):
+    (inputs, targets, static_inputs) = data
+    total_loss = 0
+    num_updates = 1
+    for epoch in range(num_updates):
+        for x, y, static_input in zip(inputs, targets, static_inputs):
+            optimizer.zero_grad()
+            x = x.unsqueeze(1)
+            static_input = static_input.unsqueeze(0)
+
+            y_preds = []
+            for _ in range(num_samples):
+                y_pred = model(x, static_input)
+                y_preds.append(y_pred)
+
+            y_pred = torch.stack(y_preds).mean(dim=0)  # 计算多次采样的平均值
+            loss = criterion(y_pred, y.unsqueeze(1), model)
+
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item()
+            # for name, param in model.named_parameters():
+            #     print(name, param.data)
+    print(1111)
+    print(f'Epoch, Loss: {total_loss / len(inputs)}')
+
+#  进行预测
+# 预测新输入[1, 7]，假设静态输入为[0.1, -0.1]
+test_input = torch.tensor([[(39-1)/99]]).float().unsqueeze(1)  # 添加batch维度
+test_static_input = torch.tensor([(6-1)/99, (55-1)/99]).float().unsqueeze(0)  # 添加batch维度
+model.eval()
+with torch.no_grad():
+    y_preds = []
+    for _ in range(100):  # 进行100次采样以估计不确定性
+        y_pred = model(test_input, test_static_input)
+        y_preds.append(y_pred)
+    y_preds = torch.stack(y_preds)
+    y_mean = y_preds.mean(dim=0)
+    y_std = y_preds.std(dim=0)
+    print(f'Prediction for input [1, 2,3,4] with static input [0.1, -0.1]: {y_mean.item()} ± {y_std.item()}')
+
+test_input = torch.tensor([[(39-1)/99]]).float().unsqueeze(1)  # 添加batch维度
+test_static_input = torch.tensor([(6-1)/99, (57-1)/99]).float().unsqueeze(0)  # 添加batch维度
+model.eval()  # 设置模型为评估模式
+with torch.no_grad():
+    y_preds = []
+    for _ in range(100):  # 进行100次采样以估计不确定性
+        y_pred = model(test_input, test_static_input)
+        y_preds.append(y_pred)
+    y_preds = torch.stack(y_preds)
+    y_mean = y_preds.mean(dim=0)
+    y_std = y_preds.std(dim=0)
+    print(f'Prediction for input [1, 2,3,4] with static input [0.1, -0.1]: {y_mean.item()} ± {y_std.item()}')
 
