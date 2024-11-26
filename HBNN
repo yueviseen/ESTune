@@ -38,7 +38,7 @@ class BayesianLinear(nn.Module):
         return nn.functional.linear(x, self.weight, self.bias)
 
 
-# 构建混合的贝叶斯神经网络（FNN+GRU）
+# 构建混合的贝叶斯神经网络
 class SimpleGRUWithBayesianOutput(nn.Module):
     def __init__(self, input_size, hidden_size, output_size, num_layers, static_input_size):
         super(SimpleGRUWithBayesianOutput, self).__init__()
