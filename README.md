@@ -1,6 +1,6 @@
 # ESTune: Bayesian Uncertainty-Guided Early Stopping for Database Configuration Tuning.
 
-## The core code of ESTune is primarily composed of the five Python files mentioned above. The specific functionalities of each file are described as follows：
+## The core code of ESTune is primarily composed of the six Python files mentioned above. The specific functionalities of each file are described as follows：
 
 (1)Setting.py serves as a configuration module, primarily responsible for the centralized management and recording of storage paths for various types of data. Specifically, it includes:
 historical_task_data_path, which specifies the storage location of historical tuning task data; current_task_data_path, which indicates the storage path for tuning task data generated during the current iteration; current_task_iteration_result_data_path, which records the storage location of database performance data obtained after the complete execution of the workload in the current iteration.
@@ -35,6 +35,8 @@ historical_task_data_path, which specifies the storage location of historical tu
 (5) HBNN.py implements a hybrid neural network framework for performance prediction. It includes a feedforward neural network (FNN) for konb feature encoding, a Bayesian neural network with four Bayesian linear layers to capture uncertainty, and a hybrid model that integrates a GRU for sequence modeling with the FNN and Bayesian layers. The code supports custom ELBO loss computation for Bayesian learning, as well as standard training routines. The design enables robust prediction and uncertainty quantification for dynamic, variable-length input data, making it suitable for research and practical applications in performance analysis.
 
 (6) MAML.py  implements a meta-learning-based Bayesian neural network framework for database knob tuning and performance prediction. The core meta-learning logic is realized through a MAML (Model-Agnostic Meta-Learning) class, which enables rapid adaptation to new database workloads using data from historical tuning tasks. The training pipeline includes both meta-training on historical task datasets and fast adaptation or prediction on current tasks. Bayesian inference is supported via Monte Carlo sampling to estimate both the predictive mean and uncertainty (standard deviation) for each configuration. 
+
+The Operations_Database directory primarily contains code for fundamental database operations, such as checking the database running status, starting the database, and stopping the database. The Tuning_Model directory mainly includes the implementation of state-of-the-art tuning algorithms, such as SMAC and DDPG.
 
 ## Run Experiments 
 
