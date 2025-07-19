@@ -36,7 +36,7 @@ historical_task_data_path, which specifies the storage location of historical tu
 
 (6) MAML.py  implements a meta-learning-based Bayesian neural network framework for database knob tuning and performance prediction. The core meta-learning logic is realized through a MAML (Model-Agnostic Meta-Learning) class, which enables rapid adaptation to new database workloads using data from historical tuning tasks. The training pipeline includes both meta-training on historical task datasets and fast adaptation or prediction on current tasks. Bayesian inference is supported via Monte Carlo sampling to estimate both the predictive mean and uncertainty (standard deviation) for each configuration. 
 
-The Operations_Database directory primarily contains code for fundamental database operations, such as checking the database running status, starting the database, and stopping the database. The Tuning_Model directory mainly includes the implementation of state-of-the-art tuning algorithms, such as SMAC and DDPG.
+Additionally, the Operations_Database directory primarily contains code for fundamental database operations, such as checking the database running status, starting the database, and stopping the database. The Tuning_Model directory mainly includes the implementation of state-of-the-art tuning algorithms, such as SMAC and DDPG.
 
 ## Run Experiments 
 
